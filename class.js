@@ -50,19 +50,19 @@
           processData(data) {
             throw new Error(`"processData" handler not created for channel (${this.#channelName})`);
           }
-          subscribe(channelName, accessConfig) {
-            lib.store.broadcaster.publishAction(channelName, 'addSubscriber', {
+          async subscribe(channelName, accessConfig) {
+            await lib.store.broadcaster.publishAction(channelName, 'addSubscriber', {
               subscriber: this.#channelName,
               accessConfig,
             });
           }
-          unsubscribe(channelName) {
-            lib.store.broadcaster.publishAction(channelName, 'deleteSubscriber', {
+          async unsubscribe(channelName) {
+            await lib.store.broadcaster.publishAction(channelName, 'deleteSubscriber', {
               subscriber: this.#channelName,
             });
           }
           async addSubscriber({ subscriber: subscriberChannel, accessConfig = {} }) {
-            this.#channel.subscribers.set(subscriberChannel, { accessConfig });
+            await this.#channel.subscribers.set(subscriberChannel, { accessConfig });
             await this.broadcastData(this.prepareInitialDataForSubscribers(), { customChannel: subscriberChannel });
           }
           deleteSubscriber({ subscriber: subscriberChannel }) {
