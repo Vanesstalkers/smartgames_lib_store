@@ -17,7 +17,7 @@
             if (!id) id = this.id();
             if (!col || !id) throw new Error(`Required is not exist (col=${col}, id=${id})`);
 
-            this.#channelName = `${col}-${id}`;
+            if (!this.#channelName) this.#channelName = `${col}-${id}`;
             this.#channel = lib.store.broadcaster.addChannel({ name: this.#channelName, instance: this });
 
             // !!! тут нужно восстановить информацию о себе у старых подписчиков
@@ -35,7 +35,8 @@
           channel() {
             return this.#channel;
           }
-          channelName() {
+          channelName(name) {
+            if (name) return (this.#channelName = name);
             return this.#channelName;
           }
           processAction(data) {
@@ -88,22 +89,22 @@
             for (const [subscriberChannel, { accessConfig = {} } = {}] of subscribers) {
               if (!customChannel || subscriberChannel === customChannel) {
                 let publishData;
-                const { rule = 'all', fields = [], pathRoot, path, userId } = accessConfig;
+                const { rule = 'all', ruleHandler, fields = [] } = accessConfig;
                 switch (rule) {
                   /**
                    * фильтруем данные через кастомный обработчик
                    */
                   case 'custom':
-                    if (!pathRoot || !path)
-                      throw new Error(
-                        `Custom rule handler path or pathRoot (subscriberChannel="${subscriberChannel}") not found`
-                      );
-                    const splittedPath = path.split('.');
-                    const method = lib.utils.getDeep(pathRoot === 'domain' ? domain : lib, splittedPath);
-                    if (typeof method !== 'function')
-                      throw new Error(
-                        `Custom rule handler (subscriberChannel="${subscriberChannel}", path="${path}") not found`
-                      );
+                    const notFoundErr = new Error(
+                      `Custom rule handler (subscriberChannel="${subscriberChannel}") not found, ruleHandler="${ruleHandler}") not found`
+                    );
+                    if (!ruleHandler) throw notFoundErr;
+
+                    const splittedPath = ['game', 'rules', ruleHandler];
+                    let method = lib.utils.getDeep(domain, splittedPath);
+                    if (!method) method = lib.utils.getDeep(lib, splittedPath);
+                    if (typeof method !== 'function') throw notFoundErr;
+
                     publishData = method(data);
                     break;
                   /**
