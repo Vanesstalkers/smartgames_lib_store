@@ -85,7 +85,12 @@
 
             if (typeof this.broadcastDataBeforeHandler === 'function') this.broadcastDataBeforeHandler(data, config);
 
-            const subscribers = this.channel().subscribers.entries();
+            const channel = this.channel();
+            if (!channel) {
+              // канал могли уже закрыть
+              console.error(`broadcastData to empty channel (col=${this.col()}, id=${this.id()}) with data:`, data);
+            }
+            const subscribers = channel ? channel.subscribers.entries() : [];
             for (const [subscriberChannel, { accessConfig = {} } = {}] of subscribers) {
               if (!customChannel || subscriberChannel === customChannel) {
                 let publishData;
