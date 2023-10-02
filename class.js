@@ -64,7 +64,11 @@
           }
           async addSubscriber({ subscriber: subscriberChannel, accessConfig = {} }) {
             await this.#channel.subscribers.set(subscriberChannel, { accessConfig });
-            await this.broadcastData(this.prepareInitialDataForSubscribers(), { customChannel: subscriberChannel });
+            await this.broadcastData(
+              this.prepareInitialDataForSubscribers(),
+              { customChannel: subscriberChannel },
+              'addSubscriber'
+            );
           }
           deleteSubscriber({ subscriber: subscriberChannel }) {
             this.#channel.subscribers.delete(subscriberChannel);
@@ -75,12 +79,16 @@
           wrapPublishData(data) {
             return { [this.col()]: { [this.id()]: data } };
           }
-          async broadcastPrivateData(channelsMap, config = {}) {
+          async broadcastPrivateData(channelsMap, config = {}, processOwner) {
             for (const [channel, data] of Object.entries(channelsMap)) {
-              await this.broadcastData(data, { ...config, customChannel: channel });
+              await this.broadcastData(
+                data,
+                { ...config, customChannel: channel },
+                `${processOwner}-broadcastPrivateData`
+              );
             }
           }
-          async broadcastData(data, config = {}) {
+          async broadcastData(data, config = {}, processOwner = {}) {
             const { customChannel } = config;
 
             if (typeof this.broadcastDataBeforeHandler === 'function') this.broadcastDataBeforeHandler(data, config);
@@ -142,7 +150,13 @@
                     publishData = data;
                 }
                 if (!Object.keys(publishData).length) continue;
-                await lib.store.broadcaster.publishData(subscriberChannel, this.wrapPublishData(publishData));
+
+                processOwner = { f: processOwner, col: this.col(), id: this.id() };
+                await lib.store.broadcaster.publishData(
+                  subscriberChannel,
+                  this.wrapPublishData(publishData),
+                  processOwner
+                );
               }
             }
 
@@ -275,7 +289,7 @@
     clearChanges() {
       this.#changes = {};
     }
-    async saveChanges() {
+    async saveChanges(processOwner = '?') {
       // !!! тут возникает гонка (смотри публикации на клиенте при открытии лобби после перезагрузки браузера)
 
       const changes = this.getChanges();
@@ -299,7 +313,9 @@
           await db.mongo.updateOne(this.#col, { _id: db.mongo.ObjectID(this.#id) }, $update);
         }
       }
-      if (typeof this.broadcastData === 'function') await this.broadcastData(changes);
+      if (typeof this.broadcastData === 'function') {
+        await this.broadcastData(changes, {}, processOwner);
+      }
 
       this.clearChanges();
     }

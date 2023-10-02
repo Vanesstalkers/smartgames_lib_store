@@ -22,16 +22,16 @@ async () => {
   broadcaster.subClient.on('message', async (channelName, message) => {
     try {
       const messageData = JSON.parse(message);
-      const { processType, ...processData } = messageData;
+      const { processType, processOwner, ...processData } = messageData;
       const channel = lib.store.broadcaster.channels.get(channelName);
       
       if (!channel.instance) throw new Error('Instance not found');
       switch (processType) {
         case 'data':
-          channel.instance.processData(processData.data);
+          channel.instance.processData(processData.data, processOwner);
           break;
         case 'action':
-          channel.instance.processAction(processData);
+          channel.instance.processAction(processData, processOwner);
           break;
       }
     } catch (err) {

@@ -1,9 +1,10 @@
-async (channelName, actionName, actionData) => {
+async (channelName, actionName, actionData, processOwner) => {
   const { pubClient } = lib.store.broadcaster;
   const result = await pubClient.publish(
     channelName,
     JSON.stringify({
       processType: 'action',
+      processOwner,
       actionName,
       actionData,
     })
