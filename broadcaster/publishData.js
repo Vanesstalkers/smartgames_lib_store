@@ -4,7 +4,7 @@ async (channelName, data, processOwner) => {
     channelName,
     JSON.stringify({
       processType: 'data',
-      processOwner,
+      processOwner: { ...processOwner, id: undefined },
       data,
     })
   );

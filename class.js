@@ -6,6 +6,8 @@
           #channelName;
           #channel;
           #client;
+          #broadcastableFields = null;
+
           constructor(data = {}) {
             const { col, id, client } = data;
             super(...arguments);
@@ -39,11 +41,21 @@
             if (name) return (this.#channelName = name);
             return this.#channelName;
           }
+
+          /**
+           * Возвращает или сохраняет список полей, которые можно публиковать
+           * @param {string[]} [data] массив полей для публикации
+           * @returns {string[]}
+           */
+          broadcastableFields(data) {
+            if (!data) return this.#broadcastableFields;
+            this.#broadcastableFields = data;
+          }
+
           processAction(data) {
             const { actionName, actionData } = data;
             if (this[actionName]) this[actionName](actionData);
           }
-
           /**
            * Базовая функция класса для сохранения данных при получении обновлений
            * @param {*} data
