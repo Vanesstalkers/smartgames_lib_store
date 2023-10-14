@@ -91,16 +91,12 @@
           wrapPublishData(data) {
             return { [this.col()]: { [this.id()]: data } };
           }
-          async broadcastPrivateData(channelsMap, config = {}, processOwner) {
+          async broadcastPrivateData(channelsMap, config = {}) {
             for (const [channel, data] of Object.entries(channelsMap)) {
-              await this.broadcastData(
-                data,
-                { ...config, customChannel: channel },
-                `${processOwner}-broadcastPrivateData`
-              );
+              await this.broadcastData(data, { ...config, customChannel: channel });
             }
           }
-          async broadcastData(data, config = {}, processOwner = {}) {
+          async broadcastData(data, config = {}) {
             const { customChannel } = config;
 
             if (typeof this.broadcastDataBeforeHandler === 'function') this.broadcastDataBeforeHandler(data, config);
@@ -163,12 +159,7 @@
                 }
                 if (!Object.keys(publishData).length) continue;
 
-                processOwner = { f: processOwner, col: this.col(), id: this.id() };
-                await lib.store.broadcaster.publishData(
-                  subscriberChannel,
-                  this.wrapPublishData(publishData),
-                  processOwner
-                );
+                await lib.store.broadcaster.publishData(subscriberChannel, this.wrapPublishData(publishData));
               }
             }
 
@@ -301,7 +292,7 @@
     clearChanges() {
       this.#changes = {};
     }
-    async saveChanges(processOwner = '?') {
+    async saveChanges() {
       // !!! тут возникает гонка (смотри публикации на клиенте при открытии лобби после перезагрузки браузера)
 
       const changes = this.getChanges();
@@ -326,7 +317,7 @@
         }
       }
       if (typeof this.broadcastData === 'function') {
-        await this.broadcastData(changes, {}, processOwner);
+        await this.broadcastData(changes);
       }
 
       this.clearChanges();
