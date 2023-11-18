@@ -137,6 +137,7 @@
                     publishData = data;
                 }
                 if (!Object.keys(publishData).length) continue;
+
                 await lib.store.broadcaster.publishData(subscriberChannel, this.wrapPublishData(publishData));
               }
             }
@@ -294,7 +295,9 @@
           await db.mongo.updateOne(this.#col, { _id: db.mongo.ObjectID(this.#id) }, $update);
         }
       }
-      if (typeof this.broadcastData === 'function') await this.broadcastData(changes);
+      if (typeof this.broadcastData === 'function') {
+        await this.broadcastData(changes, {});
+      }
 
       this.clearChanges();
     }
