@@ -6,6 +6,8 @@
           #channelName;
           #channel;
           #client;
+          #broadcastableFields = null;
+
           constructor(data = {}) {
             const { col, id, client } = data;
             super(...arguments);
@@ -39,11 +41,21 @@
             if (name) return (this.#channelName = name);
             return this.#channelName;
           }
+
+          /**
+           * Возвращает или сохраняет список полей, которые можно публиковать
+           * @param {string[]} [data] массив полей для публикации
+           * @returns {string[]}
+           */
+          broadcastableFields(data) {
+            if (!data) return this.#broadcastableFields;
+            this.#broadcastableFields = data;
+          }
+
           processAction(data) {
             const { actionName, actionData } = data;
             if (this[actionName]) this[actionName](actionData);
           }
-
           /**
            * Базовая функция класса для сохранения данных при получении обновлений
            * @param {*} data
@@ -85,7 +97,12 @@
 
             if (typeof this.broadcastDataBeforeHandler === 'function') this.broadcastDataBeforeHandler(data, config);
 
-            const subscribers = this.channel().subscribers.entries();
+            const channel = this.channel();
+            if (!channel) {
+              // канал могли уже закрыть
+              console.error(`broadcastData to empty channel (col=${this.col()}, id=${this.id()}) with data:`, data);
+            }
+            const subscribers = channel ? channel.subscribers.entries() : [];
             for (const [subscriberChannel, { accessConfig = {} } = {}] of subscribers) {
               if (!customChannel || subscriberChannel === customChannel) {
                 let publishData;
@@ -296,7 +313,7 @@
         }
       }
       if (typeof this.broadcastData === 'function') {
-        await this.broadcastData(changes, {});
+        await this.broadcastData(changes);
       }
 
       this.clearChanges();
