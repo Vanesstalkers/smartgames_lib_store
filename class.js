@@ -7,6 +7,7 @@
           #channel;
           #client;
           #broadcastableFields = null;
+          #preventBroadcastFields = [];
 
           constructor(data = {}) {
             const { col, id, client } = data;
@@ -51,6 +52,10 @@
             if (!data) return this.#broadcastableFields;
             this.#broadcastableFields = data;
           }
+          preventBroadcastFields(data) {
+            if (!data) return this.#preventBroadcastFields;
+            this.#preventBroadcastFields = data;
+          }
 
           processAction(data) {
             const { actionName, actionData } = data;
@@ -92,10 +97,18 @@
               await this.broadcastData(data, { ...config, customChannel: channel });
             }
           }
-          async broadcastData(data, config = {}) {
+
+          /**
+           * Выбирает способ подготовки данных и делает рассылку по всем подписчикам
+           */
+          async broadcastData(originalData, config = {}) {
             const { customChannel } = config;
 
-            if (typeof this.broadcastDataBeforeHandler === 'function') this.broadcastDataBeforeHandler(data, config);
+            const data = JSON.parse(JSON.stringify(originalData));
+
+            if (typeof this.broadcastDataBeforeHandler === 'function') {
+              this.broadcastDataBeforeHandler(data, config);
+            }
 
             const channel = this.channel();
             if (!channel) {
@@ -232,7 +245,24 @@
       return this;
     }
     async create(initialData = {}) {
-      const { _id } = await db.mongo.insertOne(this.#col, initialData);
+      let dbData = initialData;
+      if (this.#preventSaveFields.length) {
+        dbData = Object.fromEntries(
+          Object.entries(dbData).filter(([key, val]) => !this.#preventSaveFields.includes(key))
+        );
+      }
+      if (dbData.store) {
+        const storeData = {};
+        for (const [col, ids] of Object.entries(dbData.store)) {
+          storeData[col] = {};
+          for (const [id, obj] of Object.entries(ids)) {
+            storeData[col][id] = obj.prepareSaveData ? obj.prepareSaveData() : obj;
+          }
+        }
+        dbData = { ...dbData, store: storeData };
+      }
+
+      const { _id } = await db.mongo.insertOne(this.#col, dbData);
 
       if (!_id) {
         throw 'not_created';
