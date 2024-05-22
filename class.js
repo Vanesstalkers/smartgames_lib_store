@@ -194,6 +194,8 @@
     #changes = {};
     #disableChanges = false;
     #preventSaveFields = [];
+    #updateActionsQueue = [];
+    #updateActionsEnabled = false;
 
     constructor(data = {}) {
       const { col, id } = data;
@@ -202,7 +204,12 @@
       if (id) this.initStore(id);
     }
     id() {
-      return this.#id;
+      let id;
+      try {
+        id = this.#id;
+      } catch (err) {}
+      if (!id) id = super.id();
+      return id;
     }
     col() {
       return this.#col;
@@ -262,6 +269,7 @@
         dbData = { ...dbData, store: storeData };
       }
 
+      if (dbData._id && typeof dbData._id === 'string') dbData._id = db.mongo.ObjectID(dbData._id);
       const { _id } = await db.mongo.insertOne(this.#col, dbData);
 
       if (!_id) {
@@ -320,8 +328,8 @@
     }
     async saveChanges() {
       // !!! тут возникает гонка (смотри публикации на клиенте при открытии лобби после перезагрузки браузера)
-
       const changes = this.getChanges();
+      this.clearChanges();
       if (!Object.keys(changes).length) return;
       if (this.#id.length === 24) {
         const $update = { $set: {}, $unset: {} };
@@ -339,14 +347,20 @@
         if (Object.keys($update.$set).length === 0) delete $update.$set;
         if (Object.keys($update.$unset).length === 0) delete $update.$unset;
         if (Object.keys($update).length) {
-          await db.mongo.updateOne(this.#col, { _id: db.mongo.ObjectID(this.#id) }, $update);
+          this.#updateActionsQueue.push($update);
+          if (this.#updateActionsEnabled === false) {
+            this.#updateActionsEnabled = true;
+            while (this.#updateActionsQueue.length > 0) {
+              const updateItem = this.#updateActionsQueue.shift();
+              await db.mongo.updateOne(this.#col, { _id: db.mongo.ObjectID(this.#id) }, updateItem);
+            }
+            this.#updateActionsEnabled = false;
+          }
         }
       }
       if (typeof this.broadcastData === 'function') {
         await this.broadcastData(changes);
       }
-
-      this.clearChanges();
     }
   };
 };
