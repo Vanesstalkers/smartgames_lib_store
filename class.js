@@ -269,7 +269,6 @@
         dbData = { ...dbData, store: storeData };
       }
 
-      if (dbData._id && typeof dbData._id === 'string') dbData._id = db.mongo.ObjectID(dbData._id);
       const { _id } = await db.mongo.insertOne(this.#col, dbData);
 
       if (!_id) {
@@ -279,14 +278,12 @@
         this.initStore(_id);
         if (!this.channel()) this.initChannel();
       }
-      if (this._id) delete this._id; // не должно мешаться при сохранении в mongoDB
       return this;
     }
     async remove() {
       this.removeStore();
       this.removeChannel();
     }
-
     setChanges(val, config = {}) {
       if (this.#disableChanges) return;
       lib.utils.mergeDeep({
@@ -299,9 +296,7 @@
     set(val, config = {}) {
       this.setChanges(val, config);
       lib.utils.mergeDeep({
-        masterObj: this,
-        target: this,
-        source: val,
+        ...{ masterObj: this, target: this, source: val },
         config: { deleteNull: true, ...config }, // удаляем ключи с null-значением
       });
     }
