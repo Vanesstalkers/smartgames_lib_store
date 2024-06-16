@@ -6,7 +6,7 @@
           #channelName;
           #channel;
           #client;
-          #broadcastableFields = null;
+          #broadcastableFields = [];
           #preventBroadcastFields = [];
 
           constructor(data = {}) {
@@ -202,6 +202,8 @@
       super(...arguments);
       this.#col = col;
       if (id) this.initStore(id);
+
+      this.preventSaveFields(['eventListeners']);
     }
     id() {
       let id;
@@ -214,9 +216,9 @@
     col() {
       return this.#col;
     }
-    preventSaveFields(data) {
-      if (!data) return this.#preventSaveFields;
-      this.#preventSaveFields = data;
+    preventSaveFields(fields) {
+      if (!fields) return this.#preventSaveFields;
+      this.#preventSaveFields.push(...fields);
     }
 
     initStore(id) {
@@ -232,23 +234,25 @@
     async load({ fromData = null, fromDB = {} }, { initStore = true } = {}) {
       if (fromData) {
         Object.assign(this, fromData);
+        if(initStore) this.initStore(this._id);
       } else {
-        let { id, query } = fromDB;
+        let { id, query, processData, fromDump = false } = fromDB;
+        if (typeof processData !== 'function') processData = async (data) => Object.assign(this, data);
         if (!query && id) query = { _id: db.mongo.ObjectID(id) };
+
         if (query) {
-          const dbData = await db.mongo.findOne(this.#col, query);
-          if (dbData === null) {
+          const loadedData = await this.loadFromDB({ query, fromDump });
+          if (loadedData === null) {
             throw 'not_found';
           } else {
-            Object.assign(this, dbData);
+            await processData.call(this, loadedData);
             if (!this.#id && initStore) {
-              this.initStore(dbData._id);
+              this.initStore(loadedData._id);
               if (!this.channel()) this.initChannel();
             }
           }
         }
       }
-      if (this._id) delete this._id; // не должно мешаться при сохранении в mongoDB
       return this;
     }
     async create(initialData = {}) {
@@ -356,6 +360,14 @@
       if (typeof this.broadcastData === 'function') {
         await this.broadcastData(changes);
       }
+    }
+    async dumpState() {
+      await db.mongo.deleteOne(this.col() + '_dump', { _id: this.id() });
+      await db.mongo.insertOne(this.col() + '_dump', this);
+    }
+    async loadFromDB({ query, fromDump }) {
+      const col = this.col() + (fromDump ? '_dump' : '');
+      return await db.mongo.findOne(col, query);
     }
   };
 };
