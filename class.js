@@ -234,7 +234,7 @@
     async load({ fromData = null, fromDB = {} }, { initStore = true } = {}) {
       if (fromData) {
         Object.assign(this, fromData);
-        if(initStore) this.initStore(this._id);
+        if (initStore) this.initStore(this._id);
       } else {
         let { id, query, processData, fromDump = false } = fromDB;
         if (typeof processData !== 'function') processData = async (data) => Object.assign(this, data);
@@ -326,11 +326,19 @@
       this.#changes = {};
     }
     async saveChanges() {
-      // !!! тут возникает гонка (смотри публикации на клиенте при открытии лобби после перезагрузки браузера)
       const changes = this.getChanges();
       this.clearChanges();
+
       if (!Object.keys(changes).length) return;
-      if (this.#id.length === 24) {
+
+      this.#updateActionsQueue.push(changes);
+
+      if (this.#updateActionsEnabled === true) return;
+      this.#updateActionsEnabled = true;
+
+      while (this.#updateActionsQueue.length > 0) {
+        const changes = this.#updateActionsQueue.shift();
+
         const $update = { $set: {}, $unset: {} };
         const flattenChanges = lib.utils.flatten(changes);
         const changeKeys = Object.keys(flattenChanges);
@@ -343,23 +351,16 @@
             else $update.$set[key] = flattenChanges[key];
           }
         });
+
         if (Object.keys($update.$set).length === 0) delete $update.$set;
         if (Object.keys($update.$unset).length === 0) delete $update.$unset;
         if (Object.keys($update).length) {
-          this.#updateActionsQueue.push($update);
-          if (this.#updateActionsEnabled === false) {
-            this.#updateActionsEnabled = true;
-            while (this.#updateActionsQueue.length > 0) {
-              const updateItem = this.#updateActionsQueue.shift();
-              await db.mongo.updateOne(this.#col, { _id: db.mongo.ObjectID(this.#id) }, updateItem);
-            }
-            this.#updateActionsEnabled = false;
-          }
+          await db.mongo.updateOne(this.#col, { _id: db.mongo.ObjectID(this.#id) }, $update);
         }
+        if (typeof this.broadcastData === 'function') await this.broadcastData(changes);
       }
-      if (typeof this.broadcastData === 'function') {
-        await this.broadcastData(changes);
-      }
+
+      this.#updateActionsEnabled = false;
     }
     async dumpState() {
       await db.mongo.deleteOne(this.col() + '_dump', { _id: this.id() });
