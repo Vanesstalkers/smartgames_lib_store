@@ -363,8 +363,9 @@
       this.#updateActionsEnabled = false;
     }
     async dumpState() {
+      const clone = lib.utils.structuredClone(this);
       await db.mongo.deleteOne(this.col() + '_dump', { _id: this.id() });
-      await db.mongo.insertOne(this.col() + '_dump', this);
+      await db.mongo.insertOne(this.col() + '_dump', clone);
     }
     async loadFromDB({ query, fromDump }) {
       const col = this.col() + (fromDump ? '_dump' : '');
