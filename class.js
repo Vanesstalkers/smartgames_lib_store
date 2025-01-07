@@ -364,12 +364,32 @@
     }
     async dumpState() {
       const clone = lib.utils.structuredClone(this);
-      await db.mongo.deleteOne(this.col() + '_dump', { _id: this.id() });
+      clone._gameid = db.mongo.ObjectID(clone._id);
+      delete clone._id;
+      // await db.mongo.deleteOne(this.col() + '_dump', { _id: this.id() });
       await db.mongo.insertOne(this.col() + '_dump', clone);
     }
     async loadFromDB({ query, fromDump }) {
-      const col = this.col() + (fromDump ? '_dump' : '');
-      return await db.mongo.findOne(col, query);
+      const col = this.col();
+      const _id = db.mongo.ObjectID(query._id);
+
+      if (!fromDump) return await db.mongo.findOne(col, query);
+
+      query._gameid = _id;
+      delete query._id;
+      const [
+        dumpData, // берем первый элемент, т.к. в ответе массив
+      ] = await db.mongo.find(col + '_dump', query, {
+        ...{ sort: { round: -1 }, limit: 1 },
+      });
+
+      await db.mongo.deleteOne(col, { _id });
+
+      dumpData._id = _id;
+      delete dumpData._gameid;
+      await db.mongo.insertOne(col, dumpData);
+
+      return dumpData;
     }
   };
 };
