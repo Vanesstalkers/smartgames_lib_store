@@ -364,9 +364,9 @@
     }
     async dumpState() {
       const clone = lib.utils.structuredClone(this);
+      clone._dumptime = Date.now();
       clone._gameid = db.mongo.ObjectID(clone._id);
       delete clone._id;
-      // await db.mongo.deleteOne(this.col() + '_dump', { _id: this.id() });
       await db.mongo.insertOne(this.col() + '_dump', clone);
     }
     async loadFromDB({ query, fromDump }) {
@@ -380,7 +380,7 @@
       const [
         dumpData, // берем первый элемент, т.к. в ответе массив
       ] = await db.mongo.find(col + '_dump', query, {
-        ...{ sort: { round: -1 }, limit: 1 },
+        ...{ sort: { round: -1, _dumptime: -1 }, limit: 1 },
       });
 
       await db.mongo.deleteOne(col, { _id });
