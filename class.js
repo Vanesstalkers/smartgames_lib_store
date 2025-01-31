@@ -284,10 +284,6 @@
       }
       return this;
     }
-    async remove() {
-      this.removeStore();
-      this.removeChannel();
-    }
     setChanges(val, config = {}) {
       if (this.#disableChanges) return;
       lib.utils.mergeDeep({
