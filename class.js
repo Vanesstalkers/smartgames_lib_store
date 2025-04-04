@@ -43,18 +43,21 @@
             return this.#channelName;
           }
 
-          /**
-           * Возвращает или сохраняет список полей, которые можно публиковать
-           * @param {string[]} [data] массив полей для публикации
-           * @returns {string[]}
-           */
           broadcastableFields(data) {
+            const result = super.broadcastableFields?.(data);
+            if (result) return result;
+
             if (!data) return this.#broadcastableFields;
             this.#broadcastableFields = data;
+            return true;
           }
           preventBroadcastFields(data) {
+            const result = super.preventBroadcastFields?.(data);
+            if (result) return result;
+
             if (!data) return this.#preventBroadcastFields;
             this.#preventBroadcastFields = data;
+            return true;
           }
 
           processAction(data) {
@@ -217,10 +220,13 @@
       return this.#col;
     }
     preventSaveFields(fields) {
+      const result = super.preventSaveFields?.(fields);
+      if (result) return result;
+
       if (!fields) return this.#preventSaveFields;
       this.#preventSaveFields.push(...fields);
+      return true;
     }
-
     initStore(id) {
       this.#id = id.toString();
       lib.store(this.#col).set(this.#id, this);
@@ -257,9 +263,10 @@
     }
     async create(initialData = {}) {
       let dbData = initialData;
-      if (this.#preventSaveFields.length) {
+      const preventSaveFieldsList = this.preventSaveFields();
+      if (preventSaveFieldsList.length) {
         dbData = Object.fromEntries(
-          Object.entries(dbData).filter(([key, val]) => !this.#preventSaveFields.includes(key))
+          Object.entries(dbData).filter(([key, val]) => !preventSaveFieldsList.includes(key))
         );
       }
       if (dbData.store) {
@@ -338,8 +345,9 @@
         const $update = { $set: {}, $unset: {} };
         const flattenChanges = lib.utils.flatten(changes);
         const changeKeys = Object.keys(flattenChanges);
+        const preventSaveFieldsList = this.preventSaveFields();
         changeKeys.forEach((key, idx) => {
-          if (this.#preventSaveFields.find((field) => key.indexOf(field) === 0)) return;
+          if (preventSaveFieldsList.find((field) => key.indexOf(field) === 0)) return;
 
           // защита от ошибки MongoServerError: Updating the path 'XXX.YYY' would create a conflict at 'XXX'
           if (changeKeys[idx + 1]?.indexOf(`${key}.`) !== 0) {
