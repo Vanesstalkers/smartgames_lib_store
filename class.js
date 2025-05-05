@@ -105,7 +105,7 @@
            * Выбирает способ подготовки данных и делает рассылку по всем подписчикам
            */
           async broadcastData(originalData, config = {}) {
-            const { customChannel } = config;
+            const { customChannel, wrapperDisabled = false } = config;
 
             const data = JSON.parse(JSON.stringify(originalData));
 
@@ -171,7 +171,8 @@
                 }
                 if (!Object.keys(publishData).length) continue;
 
-                await lib.store.broadcaster.publishData(subscriberChannel, this.wrapPublishData(publishData));
+                const wrappedData = wrapperDisabled ? publishData : this.wrapPublishData(publishData);
+                await lib.store.broadcaster.publishData(subscriberChannel, wrappedData);
               }
             }
 
