@@ -60,25 +60,25 @@
             return true;
           }
 
-          processAction(data) {
+          async processAction(data) {
             const { actionName, actionData } = data;
-            if (this[actionName]) this[actionName](actionData);
+            if (this[actionName]) await this[actionName](actionData);
           }
           /**
            * Базовая функция класса для сохранения данных при получении обновлений
            * @param {*} data
            */
-          processData(data) {
+          async processData(data) {
             throw new Error(`"processData" handler not created for channel (${this.#channelName})`);
           }
           async subscribe(channelName, accessConfig) {
-            await lib.store.broadcaster.publishAction(channelName, 'addSubscriber', {
+            await lib.store.broadcaster.publishAction.call(this, channelName, 'addSubscriber', {
               subscriber: this.#channelName,
               accessConfig,
             });
           }
           async unsubscribe(channelName) {
-            await lib.store.broadcaster.publishAction(channelName, 'deleteSubscriber', {
+            await lib.store.broadcaster.publishAction.call(this, channelName, 'deleteSubscriber', {
               subscriber: this.#channelName,
             });
           }
@@ -172,7 +172,7 @@
                 if (!Object.keys(publishData).length) continue;
 
                 const wrappedData = wrapperDisabled ? publishData : this.wrapPublishData(publishData);
-                await lib.store.broadcaster.publishData(subscriberChannel, wrappedData);
+                await lib.store.broadcaster.publishData.call(this, subscriberChannel, wrappedData);
               }
             }
 
@@ -186,7 +186,7 @@
           broadcastAction(name, data, { customChannel } = {}) {
             for (const [subscriberChannel, { accessConfig = {} } = {}] of this.#channel.subscribers.entries()) {
               if (!customChannel || subscriberChannel === customChannel) {
-                lib.store.broadcaster.publishAction(subscriberChannel, name, data);
+                lib.store.broadcaster.publishAction.call(this, subscriberChannel, name, data);
               }
             }
           }
