@@ -211,7 +211,12 @@
       this.preventSaveFields(['eventListeners']);
     }
     id() {
-      return this.#id || super.id();
+      let id;
+      try {
+        id = this.#id;
+      } catch (err) {}
+      if (!id) id = super.id();
+      return id;
     }
     col() {
       return this.#col;
