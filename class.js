@@ -205,12 +205,13 @@
       const { col, id } = data;
       super(...arguments);
       this.#col = col;
+      this.#id = undefined;
       if (id) this.initStore(id);
 
       this.preventSaveFields(['eventListeners']);
     }
     id() {
-      return (() => { try { return this.#id; } catch { return super.id(); } })();
+      return this.#id || super.id();
     }
     col() {
       return this.#col;
