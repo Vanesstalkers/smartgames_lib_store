@@ -375,7 +375,10 @@
           if (Object.keys($update.$set).length === 0) delete $update.$set;
           if (Object.keys($update.$unset).length === 0) delete $update.$unset;
           if (Object.keys($update).length) {
-            await db.mongo.updateOne(this.#col, { _id: db.mongo.ObjectID(this.#id) }, $update);
+            await db.mongo.updateOne(this.#col, { _id: db.mongo.ObjectID(this.#id) }, $update).catch((err) => {
+              console.error('Error in processQueue:', { err, $update, col: this.#col, id: this.#id });
+              throw err;
+            });
           }
           if (typeof this.broadcastData === 'function') await this.broadcastData(changes);
 
