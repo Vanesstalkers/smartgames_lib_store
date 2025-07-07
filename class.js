@@ -392,6 +392,13 @@
         this.#processingPromise = null;
       }
     }
+    async dumpState() {
+      const clone = lib.utils.structuredClone(this);
+      clone._dumptime = Date.now();
+      clone._gameid = db.mongo.ObjectID(clone._id);
+      delete clone._id;
+      await db.mongo.insertOne(this.col() + '_dump', clone);
+    }
     async loadFromDB({ query, fromDump }) {
       const col = this.col();
       const _id = db.mongo.ObjectID(query._id);
