@@ -106,7 +106,7 @@
           async broadcastData(originalData, config = {}) {
             const { customChannel, wrapperDisabled = false } = config;
 
-            const data = JSON.parse(JSON.stringify(originalData));
+            const data = lib.utils.structuredClone(originalData);
 
             if (typeof this.broadcastDataBeforeHandler === 'function') {
               this.broadcastDataBeforeHandler(data, config);
