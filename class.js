@@ -99,6 +99,15 @@
               await this.broadcastData(data, { ...config, customChannel: channel });
             }
           }
+          getBroadcastRuleMethod(ruleHandler) {
+            const splittedPath = ['game', 'actions', 'broadcastRules', ruleHandler];
+            let method = lib.utils.getDeep(domain, splittedPath);
+            if (!method) method = lib.utils.getDeep(lib, splittedPath);
+
+            if (typeof method !== 'function') throw notFoundErr;
+
+            return method;
+          }
 
           /**
            * Выбирает способ подготовки данных и делает рассылку по всем подписчикам
@@ -132,10 +141,7 @@
                     );
                     if (!ruleHandler) throw notFoundErr;
 
-                    const splittedPath = ['game', 'actions', 'broadcastRules', ruleHandler];
-                    let method = lib.utils.getDeep(domain, splittedPath);
-                    if (!method) method = lib.utils.getDeep(lib, splittedPath);
-                    if (typeof method !== 'function') throw notFoundErr;
+                    const method = this.getBroadcastRuleMethod(ruleHandler);
 
                     try {
                       publishData = method(data);
