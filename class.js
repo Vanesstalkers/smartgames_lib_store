@@ -225,7 +225,7 @@
       try {
         id = this.#id;
       } catch (err) {}
-      if (!id) id = super.id();
+      if (!id) id = super.id?.(); // нет у Lib.user.class
       return id;
     }
     col() {
