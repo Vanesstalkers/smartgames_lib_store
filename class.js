@@ -99,15 +99,6 @@
             await this.broadcastData(data, { ...config, customChannel: channel });
           }
         }
-        getBroadcastRuleMethod(ruleHandler) {
-          const splittedPath = ['game', 'actions', 'broadcastRules', ruleHandler];
-          let method = lib.utils.getDeep(domain, splittedPath);
-          if (!method) method = lib.utils.getDeep(lib, splittedPath);
-
-          if (typeof method !== 'function') throw new Error(`Custom rule handler "${ruleHandler}" not found`);
-
-          return method;
-        }
 
         /**
          * Выбирает способ подготовки данных и делает рассылку по всем подписчикам
@@ -136,12 +127,16 @@
                * фильтруем данные через кастомный обработчик
                */
               case 'custom': {
-                if (!ruleHandler) throw new Error(
-                  `Custom rule handler (subscriberChannel="${subscriberChannel}"), ` +
+                const notFoundErr = new Error(
+                  `Custom rule handler (subscriberChannel="${subscriberChannel}" not found, ` +
                   `ruleHandler="${ruleHandler}") not found`
                 );
+                if (!ruleHandler) throw notFoundErr;
 
-                const method = this.getBroadcastRuleMethod(ruleHandler);
+                const splittedPath = ['game', 'actions', 'broadcastRules', ruleHandler];
+                let method = lib.utils.getDeep(domain, splittedPath);
+                if (!method) method = lib.utils.getDeep(lib, splittedPath);
+                if (typeof method !== 'function') throw notFoundErr;
 
                 try {
                   publishData = method(data);
