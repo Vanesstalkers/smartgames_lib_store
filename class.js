@@ -1,199 +1,200 @@
 (Base, { broadcastEnabled = false } = {}) => {
   const protoClass =
-    broadcastEnabled === false
-      ? Base
-      : class extends Base {
-          #channelName;
-          #channel;
-          #client;
-          #broadcastableFields = [];
-          #preventBroadcastFields = [];
+    broadcastEnabled === false ? Base :
+      class extends Base {
+        #channelName;
+        #channel;
+        #client;
+        #broadcastableFields = [];
+        #preventBroadcastFields = [];
 
-          constructor(data = {}) {
-            const { col, id, client } = data;
-            super(...arguments);
-            this.#client = client;
-            if (id) this.initChannel({ col, id });
-          }
-          initChannel({ col, id } = {}) {
-            col = col || this.col();
-            id = id || this.id();
-            if (!col || !id) throw new Error(`Required is not exist (col=${col}, id=${id})`);
+        constructor(...args) {
+          const data = args[0] || {};
+          const { col, id, client } = data;
+          super(...args);
+          this.#client = client;
+          if (id) this.initChannel({ col, id });
+        }
+        initChannel({ col, id } = {}) {
+          col = col || this.col();
+          id = id || this.id();
+          if (!col || !id) throw new Error(`Required is not exist (col=${col}, id=${id})`);
 
-            if (!this.#channelName) this.#channelName = `${col}-${id}`;
-            this.#channel = lib.store.broadcaster.addChannel({ name: this.#channelName, instance: this });
+          if (!this.#channelName) this.#channelName = `${col}-${id}`;
+          this.#channel = lib.store.broadcaster.addChannel({ name: this.#channelName, instance: this });
 
-            // !!! тут нужно восстановить информацию о себе у старых подписчиков
+          // !!! тут нужно восстановить информацию о себе у старых подписчиков
+        }
+        removeChannel() {
+          if (this.#channel) {
+            lib.store.broadcaster.removeChannel({ name: this.#channelName });
+            this.#channelName = this.#channel = null;
           }
-          removeChannel() {
-            if (this.#channel) {
-              lib.store.broadcaster.removeChannel({ name: this.#channelName });
-              this.#channelName = this.#channel = null;
-            }
+        }
+        client() {
+          return this.#client;
+        }
+        channel() {
+          return this.#channel;
+        }
+        channelName(name) {
+          if (name) return (this.#channelName = name);
+          return this.#channelName;
+        }
+
+        broadcastableFields(data) {
+          const result = super.broadcastableFields?.(data);
+          if (result) return result;
+
+          if (!data) return this.#broadcastableFields;
+          this.#broadcastableFields = data;
+          return true;
+        }
+        preventBroadcastFields(data) {
+          const result = super.preventBroadcastFields?.(data);
+          if (result) return result;
+
+          if (!data) return this.#preventBroadcastFields;
+          this.#preventBroadcastFields = data;
+          return true;
+        }
+
+        async processAction(data) {
+          const { actionName, actionData } = data;
+          if (this[actionName]) await this[actionName](actionData);
+        }
+        /**
+         * Базовая функция класса для сохранения данных при получении обновлений
+         * @param {*} data
+         */
+        async processData() {
+          throw new Error(`"processData" handler not created for channel (${this.#channelName})`);
+        }
+        async subscribe(channelName, accessConfig) {
+          await lib.store.broadcaster.publishAction.call(this, channelName, 'addSubscriber', {
+            subscriber: this.#channelName,
+            accessConfig,
+          });
+        }
+        async unsubscribe(channelName) {
+          await lib.store.broadcaster.publishAction.call(this, channelName, 'deleteSubscriber', {
+            subscriber: this.#channelName,
+          });
+        }
+        async addSubscriber({ subscriber: subscriberChannel, accessConfig = {} }) {
+          await this.#channel.subscribers.set(subscriberChannel, { accessConfig });
+          await this.broadcastData(this.prepareInitialDataForSubscribers(), { customChannel: subscriberChannel });
+        }
+        deleteSubscriber({ subscriber: subscriberChannel }) {
+          this.#channel.subscribers.delete(subscriberChannel);
+        }
+        prepareInitialDataForSubscribers() {
+          return this;
+        }
+        wrapPublishData(data) {
+          return { [this.col()]: { [this.id()]: data } };
+        }
+        async broadcastPrivateData(channelsMap, config = {}) {
+          for (const [channel, data] of Object.entries(channelsMap)) {
+            await this.broadcastData(data, { ...config, customChannel: channel });
           }
-          client() {
-            return this.#client;
-          }
-          channel() {
-            return this.#channel;
-          }
-          channelName(name) {
-            if (name) return (this.#channelName = name);
-            return this.#channelName;
+        }
+
+        /**
+         * Выбирает способ подготовки данных и делает рассылку по всем подписчикам
+         */
+        async broadcastData(originalData, config = {}) {
+          const { customChannel, wrapperDisabled = false } = config;
+
+          const data = lib.utils.structuredClone(originalData);
+
+          if (typeof this.broadcastDataBeforeHandler === 'function') {
+            this.broadcastDataBeforeHandler(data, config);
           }
 
-          broadcastableFields(data) {
-            const result = super.broadcastableFields?.(data);
-            if (result) return result;
+          const channel = this.channel();
+          if (!channel) {
+            // канал могли уже закрыть
+            console.error(`broadcastData to empty channel (col=${this.col()}, id=${this.id()}) with data:`, data);
+          }
+          const subscribers = channel ? channel.subscribers.entries() : [];
+          for (const [subscriberChannel, { accessConfig = {} } = {}] of subscribers) {
+            if (!customChannel || subscriberChannel === customChannel) {
+              let publishData;
+              const { rule = 'all', ruleHandler, fields = [] } = accessConfig;
+              switch (rule) {
+              /**
+               * фильтруем данные через кастомный обработчик
+               */
+              case 'custom': {
+                const notFoundErr = new Error(
+                  `Custom rule handler (subscriberChannel="${subscriberChannel}" not found, ` +
+                  `ruleHandler="${ruleHandler}") not found`
+                );
+                if (!ruleHandler) throw notFoundErr;
 
-            if (!data) return this.#broadcastableFields;
-            this.#broadcastableFields = data;
-            return true;
-          }
-          preventBroadcastFields(data) {
-            const result = super.preventBroadcastFields?.(data);
-            if (result) return result;
+                const splittedPath = ['game', 'actions', 'broadcastRules', ruleHandler];
+                let method = lib.utils.getDeep(domain, splittedPath);
+                if (!method) method = lib.utils.getDeep(lib, splittedPath);
+                if (typeof method !== 'function') throw notFoundErr;
 
-            if (!data) return this.#preventBroadcastFields;
-            this.#preventBroadcastFields = data;
-            return true;
-          }
-
-          async processAction(data) {
-            const { actionName, actionData } = data;
-            if (this[actionName]) await this[actionName](actionData);
-          }
-          /**
-           * Базовая функция класса для сохранения данных при получении обновлений
-           * @param {*} data
-           */
-          async processData(data) {
-            throw new Error(`"processData" handler not created for channel (${this.#channelName})`);
-          }
-          async subscribe(channelName, accessConfig) {
-            await lib.store.broadcaster.publishAction.call(this, channelName, 'addSubscriber', {
-              subscriber: this.#channelName,
-              accessConfig,
-            });
-          }
-          async unsubscribe(channelName) {
-            await lib.store.broadcaster.publishAction.call(this, channelName, 'deleteSubscriber', {
-              subscriber: this.#channelName,
-            });
-          }
-          async addSubscriber({ subscriber: subscriberChannel, accessConfig = {} }) {
-            await this.#channel.subscribers.set(subscriberChannel, { accessConfig });
-            await this.broadcastData(this.prepareInitialDataForSubscribers(), { customChannel: subscriberChannel });
-          }
-          deleteSubscriber({ subscriber: subscriberChannel }) {
-            this.#channel.subscribers.delete(subscriberChannel);
-          }
-          prepareInitialDataForSubscribers() {
-            return this;
-          }
-          wrapPublishData(data) {
-            return { [this.col()]: { [this.id()]: data } };
-          }
-          async broadcastPrivateData(channelsMap, config = {}) {
-            for (const [channel, data] of Object.entries(channelsMap)) {
-              await this.broadcastData(data, { ...config, customChannel: channel });
-            }
-          }
-
-          /**
-           * Выбирает способ подготовки данных и делает рассылку по всем подписчикам
-           */
-          async broadcastData(originalData, config = {}) {
-            const { customChannel, wrapperDisabled = false } = config;
-
-            const data = lib.utils.structuredClone(originalData);
-
-            if (typeof this.broadcastDataBeforeHandler === 'function') {
-              this.broadcastDataBeforeHandler(data, config);
-            }
-
-            const channel = this.channel();
-            if (!channel) {
-              // канал могли уже закрыть
-              console.error(`broadcastData to empty channel (col=${this.col()}, id=${this.id()}) with data:`, data);
-            }
-            const subscribers = channel ? channel.subscribers.entries() : [];
-            for (const [subscriberChannel, { accessConfig = {} } = {}] of subscribers) {
-              if (!customChannel || subscriberChannel === customChannel) {
-                let publishData;
-                const { rule = 'all', ruleHandler, fields = [] } = accessConfig;
-                switch (rule) {
-                  /**
-                   * фильтруем данные через кастомный обработчик
-                   */
-                  case 'custom':
-                    const notFoundErr = new Error(
-                      `Custom rule handler (subscriberChannel="${subscriberChannel}") not found, ruleHandler="${ruleHandler}") not found`
-                    );
-                    if (!ruleHandler) throw notFoundErr;
-
-                    const splittedPath = ['game', 'actions', 'broadcastRules', ruleHandler];
-                    let method = lib.utils.getDeep(domain, splittedPath);
-                    if (!method) method = lib.utils.getDeep(lib, splittedPath);
-                    if (typeof method !== 'function') throw notFoundErr;
-
-                    try {
-                      publishData = method(data);
-                    } catch (err) {
-                      if (err !== `action "${ruleHandler}" not found`) throw err;
-                    }
-                    break;
-                  /**
-                   * отправляем только выбранные поля (и вложенные в них объекты)
-                   */
-                  case 'fields':
-                    publishData = Object.fromEntries(
-                      Object.entries(data).filter(([key, value]) =>
-                        fields.find((field) => key === field || key.indexOf(field + '.') === 0)
-                      )
-                    );
-                    break;
-                  /**
-                   * отправляем данные в формате хранилища на клиенте
-                   */
-                  case 'vue-store':
-                    publishData =
-                      typeof this.broadcastDataVueStoreRuleHandler === 'function'
-                        ? this.broadcastDataVueStoreRuleHandler(data, { accessConfig })
-                        : data;
-                    break;
-                  /**
-                   * только события
-                   */
-                  case 'actions-only':
-                    publishData = {};
-                    break;
-                  case 'all':
-                  default:
-                    publishData = data;
+                try {
+                  publishData = method(data);
+                } catch (err) {
+                  if (err !== `action "${ruleHandler}" not found`) throw err;
                 }
-                if (!Object.keys(publishData).length) continue;
-
-                const wrappedData = wrapperDisabled ? publishData : this.wrapPublishData(publishData);
-                await lib.store.broadcaster.publishData.call(this, subscriberChannel, wrappedData);
+                break;
               }
-            }
-
-            if (typeof this.broadcastDataAfterHandler === 'function') this.broadcastDataAfterHandler(data, config);
-          }
-          broadcastPrivateAction(name, channelsMap, config = {}) {
-            for (const [channel, data] of Object.entries(channelsMap)) {
-              this.broadcastAction(name, data, { ...config, customChannel: channel });
-            }
-          }
-          broadcastAction(name, data, { customChannel } = {}) {
-            for (const [subscriberChannel, { accessConfig = {} } = {}] of this.#channel.subscribers.entries()) {
-              if (!customChannel || subscriberChannel === customChannel) {
-                lib.store.broadcaster.publishAction.call(this, subscriberChannel, name, data);
+              /**
+               * отправляем только выбранные поля (и вложенные в них объекты)
+               */
+              case 'fields':
+                publishData = Object.fromEntries(
+                  Object.entries(data).filter(([key]) =>
+                    fields.find((field) => key === field || key.indexOf(field + '.') === 0)
+                  )
+                );
+                break;
+              /**
+               * отправляем данные в формате хранилища на клиенте
+               */
+              case 'vue-store':
+                publishData =
+                  typeof this.broadcastDataVueStoreRuleHandler === 'function' ?
+                    this.broadcastDataVueStoreRuleHandler(data, { accessConfig }) : data;
+                break;
+              /**
+               * только события
+               */
+              case 'actions-only':
+                publishData = {};
+                break;
+              case 'all':
+              default:
+                publishData = data;
               }
+              if (!Object.keys(publishData).length) continue;
+
+              const wrappedData = wrapperDisabled ? publishData : this.wrapPublishData(publishData);
+              await lib.store.broadcaster.publishData.call(this, subscriberChannel, wrappedData);
             }
           }
-        };
+
+          if (typeof this.broadcastDataAfterHandler === 'function') this.broadcastDataAfterHandler(data, config);
+        }
+        broadcastPrivateAction(name, channelsMap, config = {}) {
+          for (const [channel, data] of Object.entries(channelsMap)) {
+            this.broadcastAction(name, data, { ...config, customChannel: channel });
+          }
+        }
+        broadcastAction(name, data, { customChannel } = {}) {
+          for (const [subscriberChannel] of this.#channel.subscribers.entries()) {
+            if (!customChannel || subscriberChannel === customChannel) {
+              lib.store.broadcaster.publishAction.call(this, subscriberChannel, name, data);
+            }
+          }
+        }
+      };
 
   return class extends protoClass {
     #id;
@@ -205,9 +206,10 @@
     #isProcessing = false;
     #processingPromise = null;
 
-    constructor(data = {}) {
+    constructor(...args) {
+      const data = args[0] || {};
       const { col, id } = data;
-      super(...arguments);
+      super(...args);
       this.#col = col;
       this.#id = undefined;
       if (id) this.initStore(id);
@@ -218,7 +220,7 @@
       let id;
       try {
         id = this.#id;
-      } catch (err) {}
+      } catch (err) { /* empty */ }
       if (!id) id = super.id();
       return id;
     }
@@ -248,7 +250,9 @@
         Object.assign(this, fromData);
         if (initStore) this.initStore(this._id);
       } else {
-        let { id, query, processData, fromDump = false } = fromDB;
+        const { id, fromDump = false } = fromDB;
+        let { query, processData } = fromDB;
+
         if (typeof processData !== 'function') processData = async (data) => Object.assign(this, data);
         if (!query && id) query = { _id: db.mongo.ObjectID(id) };
 
@@ -272,7 +276,7 @@
       const preventSaveFieldsList = this.preventSaveFields();
       if (preventSaveFieldsList.length) {
         dbData = Object.fromEntries(
-          Object.entries(dbData).filter(([key, val]) => !preventSaveFieldsList.includes(key))
+          Object.entries(dbData).filter(([key]) => !preventSaveFieldsList.includes(key))
         );
       }
       if (dbData.store) {
@@ -307,7 +311,9 @@
         masterObj: config.masterObject || this,
         target: this.#changes,
         source: lib.utils.structuredClone(val),
-        config, // все получатели #changes должны знать об удаленных ключах, поэтому ключи с null-значением сохраняем (по дефолту deleteNull = false)
+        /* // все получатели #changes должны знать об удаленных ключах,
+        поэтому ключи с null-значением сохраняем (по дефолту deleteNull = false) */
+        config,
       });
     }
     set(val, config = {}) {
