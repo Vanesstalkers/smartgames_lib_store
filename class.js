@@ -19,14 +19,10 @@
           initChannel({ col, id } = {}) {
             col = col || this.col();
             id = id || this.id();
-            if (!col || !id)
-              throw new Error(`Required is not exist (col=${col}, id=${id})`);
+            if (!col || !id) throw new Error(`Required is not exist (col=${col}, id=${id})`);
 
             if (!this.#channelName) this.#channelName = `${col}-${id}`;
-            this.#channel = lib.store.broadcaster.addChannel({
-              name: this.#channelName,
-              instance: this,
-            });
+            this.#channel = lib.store.broadcaster.addChannel({ name: this.#channelName, instance: this });
 
             // !!! тут нужно восстановить информацию о себе у старых подписчиков
           }
@@ -74,32 +70,19 @@
            */
           async processData() {
             const channel = this.#channelName;
-            throw new Error(
-              `"processData" handler not created for channel (${channel})`,
-            );
+            throw new Error(`"processData" handler not created for channel (${channel})`);
           }
           async subscribe(channelName, accessConfig) {
-            await lib.store.broadcaster.publishAction.call(
-              ...[this, channelName, "addSubscriber"],
-              { subscriber: this.#channelName, accessConfig },
-            );
+            const config = { subscriber: this.#channelName, accessConfig };
+            await lib.store.broadcaster.publishAction.call(this, channelName, 'addSubscriber', config);
           }
           async unsubscribe(channelName) {
-            await lib.store.broadcaster.publishAction.call(
-              ...[this, channelName, "deleteSubscriber"],
-              { subscriber: this.#channelName },
-            );
+            const config = { subscriber: this.#channelName };
+            await lib.store.broadcaster.publishAction.call(this, channelName, 'deleteSubscriber', config);
           }
-          async addSubscriber({
-            subscriber: subscriberChannel,
-            accessConfig = {},
-          }) {
-            await this.#channel.subscribers.set(subscriberChannel, {
-              accessConfig,
-            });
-            await this.broadcastData(this.prepareInitialDataForSubscribers(), {
-              customChannel: subscriberChannel,
-            });
+          async addSubscriber({ subscriber: subscriberChannel, accessConfig = {} }) {
+            await this.#channel.subscribers.set(subscriberChannel, { accessConfig });
+            await this.broadcastData(this.prepareInitialDataForSubscribers(), { customChannel: subscriberChannel });
           }
           deleteSubscriber({ subscriber: subscriberChannel }) {
             this.#channel.subscribers.delete(subscriberChannel);
@@ -124,17 +107,14 @@
 
             const data = lib.utils.structuredClone(originalData);
 
-            if (typeof this.broadcastDataBeforeHandler === "function") {
+            if (typeof this.broadcastDataBeforeHandler === 'function') {
               this.broadcastDataBeforeHandler(data, config);
             }
 
             const channel = this.channel();
             if (!channel) {
               // канал могли уже закрыть
-              console.error(
-                `broadcastData to empty channel (col=${this.col()}, id=${this.id()}) with data:`,
-                data,
-              );
+              console.error(`broadcastData to empty channel (col=${this.col()}, id=${this.id()}) with data:`, data);
             }
             const subscribers = channel ? channel.subscribers.entries() : [];
             for (const sItem of subscribers) {
@@ -142,106 +122,79 @@
 
               if (!customChannel || subscriberChannel === customChannel) {
                 let publishData;
-                const { rule = "all", ruleHandler, fields = [] } = accessConfig;
+                const { rule = 'all', ruleHandler, fields = [] } = accessConfig;
                 switch (rule) {
                   /**
                    * фильтруем данные через кастомный обработчик
                    */
-                  case "custom": {
+                  case 'custom': {
                     const notFoundErr = new Error(
                       `Custom rule handler (subscriberChannel="${subscriberChannel}" not found, ` +
-                        `ruleHandler="${ruleHandler}") not found`,
+                        `ruleHandler="${ruleHandler}") not found`
                     );
                     if (!ruleHandler) throw notFoundErr;
 
-                    const splittedPath = [
-                      "game",
-                      "actions",
-                      "broadcastRules",
-                      ruleHandler,
-                    ];
+                    const splittedPath = ['game', 'actions', 'broadcastRules', ruleHandler];
                     let method = lib.utils.getDeep(domain, splittedPath);
                     if (!method) method = lib.utils.getDeep(lib, splittedPath);
-                    if (typeof method !== "function") throw notFoundErr;
+                    if (typeof method !== 'function') throw notFoundErr;
 
                     try {
                       publishData = method(data);
                     } catch (err) {
-                      if (err !== `action "${ruleHandler}" not found`)
-                        throw err;
+                      if (err !== `action "${ruleHandler}" not found`) throw err;
                     }
                     break;
                   }
                   /**
                    * отправляем только выбранные поля (и вложенные в них объекты)
                    */
-                  case "fields":
+                  case 'fields':
                     publishData = Object.fromEntries(
                       Object.entries(data).filter(([key]) =>
-                        fields.find(
-                          (field) =>
-                            key === field || key.indexOf(field + ".") === 0,
-                        ),
-                      ),
+                        fields.find((field) => key === field || key.indexOf(field + '.') === 0)
+                      )
                     );
                     break;
                   /**
                    * отправляем данные в формате хранилища на клиенте
                    */
-                  case "vue-store":
+                  case 'vue-store':
                     publishData =
-                      typeof this.broadcastDataVueStoreRuleHandler ===
-                      "function"
-                        ? this.broadcastDataVueStoreRuleHandler(data, {
-                            accessConfig,
-                          })
+                      typeof this.broadcastDataVueStoreRuleHandler === 'function'
+                        ? this.broadcastDataVueStoreRuleHandler(data, { accessConfig })
                         : data;
                     break;
                   /**
                    * только события
                    */
-                  case "actions-only":
+                  case 'actions-only':
                     publishData = {};
                     break;
-                  case "all":
+                  case 'all':
                   default:
                     publishData = data;
                 }
                 if (!Object.keys(publishData).length) continue;
 
-                const wrappedData = wrapperDisabled
-                  ? publishData
-                  : this.wrapPublishData(publishData);
-                await lib.store.broadcaster.publishData.call(
-                  this,
-                  subscriberChannel,
-                  wrappedData,
-                );
+                const wrappedData = wrapperDisabled ? publishData : this.wrapPublishData(publishData);
+                await lib.store.broadcaster.publishData.call(this, subscriberChannel, wrappedData);
               }
             }
 
-            if (typeof this.broadcastDataAfterHandler === "function")
+            if (typeof this.broadcastDataAfterHandler === 'function') {
               this.broadcastDataAfterHandler(data, config);
+            }
           }
           broadcastPrivateAction(name, channelsMap, config = {}) {
             for (const [channel, data] of Object.entries(channelsMap)) {
-              this.broadcastAction(name, data, {
-                ...config,
-                customChannel: channel,
-              });
+              this.broadcastAction(name, data, { ...config, customChannel: channel });
             }
           }
           broadcastAction(name, data, { customChannel } = {}) {
-            for (const [
-              subscriberChannel,
-            ] of this.#channel.subscribers.entries()) {
+            for (const [subscriberChannel] of this.#channel.subscribers.entries()) {
               if (!customChannel || subscriberChannel === customChannel) {
-                lib.store.broadcaster.publishAction.call(
-                  this,
-                  subscriberChannel,
-                  name,
-                  data,
-                );
+                lib.store.broadcaster.publishAction.call(this, subscriberChannel, name, data);
               }
             }
           }
@@ -265,7 +218,7 @@
       this.#id = undefined;
       if (id) this.initStore(id);
 
-      this.preventSaveFields(["eventListeners"]);
+      this.preventSaveFields(['eventListeners']);
     }
     id() {
       let id;
@@ -296,7 +249,7 @@
       lib.store(this.#col).delete(this.#id);
     }
     storeId() {
-      return this.#col + "-" + this.#id;
+      return this.#col + '-' + this.#id;
     }
     async load({ fromData = null, fromDB = {} }, { initStore = true } = {}) {
       if (fromData) {
@@ -306,16 +259,15 @@
         const { id, fromDump = false } = fromDB;
         let { query, processData } = fromDB;
 
-        if (typeof processData !== "function") {
-          processData = async (d) =>
-            Object.assign(data.loadedInstance, data.loadedData);
+        if (typeof processData !== 'function') {
+          processData = async (data) => Object.assign(data.loadedInstance, data.loadedData);
         }
 
         if (!query && id) query = { _id: db.mongo.ObjectID(id) };
 
         if (query) {
           const loadedData = await this.loadFromDB({ query, fromDump });
-          if (loadedData === null) throw "not_found";
+          if (loadedData === null) throw 'not_found';
           else {
             await processData.call(this, { loadedInstance: this, loadedData });
             if (!this.#id && initStore) {
@@ -329,14 +281,12 @@
     }
     async create(initialData = {}) {
       let dbData = initialData;
+
       const preventSaveFieldsList = this.preventSaveFields();
       if (preventSaveFieldsList.length) {
-        dbData = Object.fromEntries(
-          Object.entries(dbData).filter(
-            ([key]) => !preventSaveFieldsList.includes(key),
-          ),
-        );
+        dbData = Object.fromEntries(Object.entries(dbData).filter(([key]) => !preventSaveFieldsList.includes(key)));
       }
+
       if (dbData.store) {
         const storeData = {};
         for (const [col, ids] of Object.entries(dbData.store)) {
@@ -350,7 +300,7 @@
 
       const { _id } = await db.mongo.insertOne(this.#col, dbData);
 
-      if (!_id) throw "not_created";
+      if (!_id) throw 'not_created';
       else {
         Object.assign(this, initialData);
         this.initStore(_id);
@@ -435,7 +385,7 @@
 
             // защита от ошибки MongoServerError: Updating the path 'XXX.YYY' would create a conflict at 'XXX'
             if (changeKeys[idx + 1]?.indexOf(`${key}.`) !== 0) {
-              if (flattenChanges[key] === null) $update.$unset[key] = "";
+              if (flattenChanges[key] === null) $update.$unset[key] = '';
               else $update.$set[key] = flattenChanges[key];
             }
           });
@@ -448,11 +398,11 @@
               throw err;
             });
           }
-          if (typeof this.broadcastData === "function")
-            await this.broadcastData(changes);
+
+          if (typeof this.broadcastData === 'function') await this.broadcastData(changes);
         }
       } catch (error) {
-        console.error("Error in processQueue:", error);
+        console.error('Error in processQueue:', error);
         throw error;
       } finally {
         // Гарантированно сбрасываем флаги
@@ -466,7 +416,7 @@
       clone._gameid = db.mongo.ObjectID(clone._id);
       delete clone._id;
 
-      await db.mongo.insertOne(this.col() + "_dump", clone);
+      await db.mongo.insertOne(this.col() + '_dump', clone);
     }
     async loadFromDB({ query, fromDump }) {
       const col = this.col();
@@ -478,9 +428,7 @@
       delete query._id;
       const [
         dumpData, // берем первый элемент, т.к. в ответе массив
-      ] = await db.mongo.find(col + "_dump", query, {
-        ...{ sort: { round: -1, _dumptime: -1 }, limit: 1 },
-      });
+      ] = await db.mongo.find(col + '_dump', query, { sort: { round: -1, _dumptime: -1 }, limit: 1 });
 
       if (!dumpData) return null;
 
