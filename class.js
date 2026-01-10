@@ -68,7 +68,7 @@
            * Базовая функция класса для сохранения данных при получении обновлений
            * @param {*} data
            */
-          async processData() {
+          async processData(data, broadcaster) {
             const channel = this.#channelName;
             throw new Error(`"processData" handler not created for channel (${channel})`);
           }
@@ -178,6 +178,7 @@
                 if (!Object.keys(publishData).length) continue;
 
                 const wrappedData = wrapperDisabled ? publishData : this.wrapPublishData(publishData);
+
                 await lib.store.broadcaster.publishData.call(this, subscriberChannel, wrappedData);
               }
             }
